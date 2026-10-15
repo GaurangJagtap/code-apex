@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}Product Catalog — DevStore{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+  <h1 style="font-size: 2rem; color: #064e3b; margin-bottom: 0.5rem;">Hardware & Essentials Catalog</h1>
+  <p style="color: #6b7280;">Discover tools designed to elevate your developer workflow.</p>
+</div>
+
+<div class="grid-products">
+  {% for product in products %}
+  <article class="product-card" id="catalog-card-{{ product.id }}">
+    <span class="product-tag">{{ product.category }}</span>
+    <h2 class="product-title">{{ product.name }}</h2>
+    <p class="product-desc">{{ product.description }}</p>
+    <div class="product-price">${{ "%.2f"|format(product.price) }}</div>
+    <div style="display: flex; gap: 0.5rem; margin-top: auto;">
+      <a href="/products/{{ product.id }}" id="btn-catalog-view-{{ product.id }}" class="btn btn-secondary" style="flex: 1; text-align: center;">View Details</a>
+      <form action="/cart/add" method="POST" style="flex: 1;">
+        <input type="hidden" name="product_id" value="{{ product.id }}">
+        <input type="hidden" name="quantity" value="1">
+        <button type="submit" id="btn-catalog-add-{{ product.id }}" class="btn btn-primary" style="width: 100%;">Add to Cart</button>
+      </form>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% endblock %}

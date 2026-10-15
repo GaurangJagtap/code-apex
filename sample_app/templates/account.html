@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Customer Account — DevStore{% endblock %}
+
+{% block content %}
+<div style="background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 2rem; max-width: 800px; margin: 2rem auto;">
+  <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e5e7eb; padding-bottom: 1rem; margin-bottom: 1.5rem;">
+    <div>
+      <h1 style="font-size: 1.75rem; color: #064e3b;" id="account-heading">Customer Account Dashboard</h1>
+      <p style="color: #6b7280; font-size: 0.9rem;">Manage personal details and inspect order receipts.</p>
+    </div>
+    <!-- Seeded Defect BUG-05: Accessible without authentication -->
+    <span class="badge" id="account-status-badge" style="background: #047857; font-size: 0.85rem; padding: 0.35rem 0.75rem;">Active Customer</span>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+    <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1.25rem;">
+      <h3 style="font-size: 1rem; color: #064e3b; margin-bottom: 0.5rem;">Personal Profile</h3>
+      <p><strong>Name:</strong> <span id="account-name">{{ user.name if user else 'John Doe (Unauthenticated Visitor)' }}</span></p>
+      <p><strong>Email:</strong> <span id="account-email">{{ user.email if user else 'john.doe.demo@apexqa.io' }}</span></p>
+      <p><strong>Member Since:</strong> <span>October 2024</span></p>
+    </div>
+
+    <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1.25rem;">
+      <h3 style="font-size: 1rem; color: #064e3b; margin-bottom: 0.5rem;">Saved Address</h3>
+      <p><strong>Address:</strong> <span>450 Tech Way, Suite 100</span></p>
+      <p><strong>City:</strong> <span>Austin, TX 78701</span></p>
+      <p><strong>Country:</strong> <span>United States</span></p>
+    </div>
+  </div>
+
+  <div>
+    <h3 style="font-size: 1.25rem; color: #064e3b; margin-bottom: 1rem;">Past Orders</h3>
+    {% if orders|length == 0 %}
+      <p style="color: #6b7280;">No past orders recorded.</p>
+    {% else %}
+      <table class="cart-table">
+        <thead>
+          <tr>
+            <th>Order ID</th>
+            <th>Date</th>
+            <th>Recipient</th>
+            <th>Total Amount</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ord in orders %}
+          <tr id="order-row-{{ ord.id }}">
+            <td><a href="/order-confirmation/{{ ord.id }}" style="color: #047857; font-weight: 600;">{{ ord.id }}</a></td>
+            <td>{{ ord.created_at[:10] }}</td>
+            <td>{{ ord.fullname }}</td>
+            <td>${{ "%.2f"|format(ord.total) }}</td>
+            <td><span class="badge" style="background: #10b981;">Confirmed</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

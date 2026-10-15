@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}DevStore — Hardware & Developer Essentials{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="navbar" role="banner">
+    <a href="/" class="brand" id="nav-brand">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/></svg>
+      <span>DevStore</span>
+    </a>
+    <nav class="nav-links" role="navigation" aria-label="Main Navigation">
+      <a href="/" id="nav-home">Home</a>
+      <a href="/products" id="nav-products">Products</a>
+      <a href="/cart" id="nav-cart">Cart <span class="badge" id="cart-count">{{ cart_count }}</span></a>
+      {% if user %}
+        <a href="/account" id="nav-account">Account ({{ user.name }})</a>
+        <a href="/logout" id="nav-logout">Logout</a>
+      {% else %}
+        <a href="/login" id="nav-login">Sign In</a>
+        <a href="/register" id="nav-register">Register</a>
+      {% endif %}
+    </nav>
+  </header>
+
+  <main class="container" role="main">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer style="text-align: center; padding: 2rem; color: #9ca3af; font-size: 0.85rem; border-top: 1px solid #e5e7eb; margin-top: 4rem;">
+    <p>DevStore Demo Application &copy; 2026 — Controlled Environment for Autonomous AI QA Engineer testing.</p>
+    <p style="margin-top: 0.5rem;"><button id="btn-quick-reset" onclick="fetch('/api/reset', {method:'POST'}).then(()=>window.location.reload())" style="background: none; border: 1px dashed #d1d5db; padding: 2px 8px; font-size: 0.75rem; color: #6b7280; border-radius: 4px; cursor: pointer;">Reset Sample App State</button></p>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero" aria-labelledby="hero-heading">
+  <h1 id="hero-heading">High Performance Developer Gear</h1>
+  <p>Engineered for productivity, ergonomic perfection, and flawless deep work sessions.</p>
+  <a href="/products" id="btn-hero-shop" class="btn btn-primary" role="button">Explore Catalog</a>
+</section>
+
+<section aria-labelledby="featured-heading">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+    <h2 id="featured-heading" style="font-size: 1.5rem; color: #064e3b;">Featured Products</h2>
+    <a href="/products" id="link-all-products" style="color: #047857; text-decoration: none; font-weight: 600;">View All &rarr;</a>
+  </div>
+
+  <div class="grid-products">
+    {% for product in products[:3] %}
+    <article class="product-card" id="product-card-{{ product.id }}">
+      <span class="product-tag">{{ product.category }}</span>
+      <h3 class="product-title">{{ product.name }}</h3>
+      <p class="product-desc">{{ product.description }}</p>
+      <div class="product-price">${{ "%.2f"|format(product.price) }}</div>
+      <div style="display: flex; gap: 0.5rem;">
+        <a href="/products/{{ product.id }}" id="btn-view-{{ product.id }}" class="btn btn-secondary" style="flex: 1; text-align: center;">Details</a>
+        <form action="/cart/add" method="POST" style="flex: 1;">
+          <input type="hidden" name="product_id" value="{{ product.id }}">
+          <input type="hidden" name="quantity" value="1">
+          <button type="submit" id="btn-add-{{ product.id }}" class="btn btn-primary" style="width: 100%;">Add to Cart</button>
+        </form>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

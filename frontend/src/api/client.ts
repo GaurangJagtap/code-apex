@@ -1,0 +1,174 @@
+import axios from 'axios';
+
+const api = axios.create({
+  baseURL: '/api/v1',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+export interface RunSummary {
+  id: string;
+  target_url: string;
+  description: string;
+  status: string;
+  mode: string;
+  start_time: string;
+  end_time?: string;
+  duration_sec: number;
+  total_tests: number;
+  passed_count: number;
+  failed_count: number;
+  blocked_count: number;
+  findings_count: number;
+  error_summary?: string;
+}
+
+export interface RunEvent {
+  id: string;
+  run_id: string;
+  timestamp: string;
+  stage: string;
+  agent_role: string;
+  event_type: string;
+  message: string;
+  details: Record<string, any>;
+}
+
+export interface ExploredPage {
+  id: string;
+  url: string;
+  title?: string;
+  status: string;
+  discovered_controls: Array<{
+    tag: string;
+    type?: string;
+    role?: string;
+    selector: string;
+    text?: string;
+  }>;
+  navigation_links: string[];
+  depth: number;
+}
+
+export interface TestCaseExecution {
+  id: string;
+  test_case_id: string;
+  title: string;
+  category: string;
+  priority: string;
+  priority_score: number;
+  status: string;
+  duration_sec: number;
+  retry_count: number;
+  preconditions?: string;
+  steps: Array<{ action: string; selector?: string; value?: string; description: string }>;
+  assertions: Array<{ type: string; target: string; expected?: string; message?: string }>;
+  actual_observations?: string;
+  assertion_results: Array<{ type: string; passed: boolean; actual: string; message: string }>;
+  screenshot_urls: string[];
+  console_logs: string[];
+  finding_id?: string;
+  risk_reason?: string;
+  curiosity_breakdown?: {
+    impact: number;
+    uncertainty: number;
+    novelty: number;
+    coverage_gap: number;
+    priority_score: number;
+    reasoning: string;
+  };
+  regression_eligible?: boolean;
+}
+
+export interface BugFinding {
+  id: string;
+  run_id: string;
+  test_execution_id?: string;
+  title: string;
+  description: string;
+  affected_url: string;
+  severity: 'Critical' | 'High' | 'Medium' | 'Low';
+  severity_reason?: string;
+  status: 'Confirmed' | 'Suspected' | 'Inconclusive' | 'Not Reproducible';
+  confidence_score: number;
+  verification_notes?: string;
+  expected_behavior: string;
+  actual_behavior: string;
+  reproduction_steps: string[];
+  screenshot_url?: string;
+  console_errors: string[];
+  replay_attempts: number;
+  created_at: string;
+}
+
+export interface RegressionTest {
+  id: string;
+  name: string;
+  target_url: string;
+  original_run_id?: string;
+  original_test_id?: string;
+  steps_count: number;
+  assertions_count: number;
+  created_at: string;
+  last_run_at?: string;
+  last_status: string;
+  executions_count: number;
+}
+
+export interface RegressionRunResult {
+  execution_id: string;
+  test_id: string;
+  status: string;
+  previous_status?: string;
+  duration_sec: number;
+  diff_summary: string;
+  executed_at: string;
+}
+
+export interface ConfigStatus {
+  llm_provider: string;
+  llm_model: string;
+  api_key_configured: boolean;
+  api_key_masked: string;
+  demo_mode_active: boolean;
+  allowed_hosts: string[];
+  boundaries: {
+    max_pages: number;
+    max_actions: number;
+    max_duration_sec: number;
+    max_retries: number;
+  };
+}
+
+export const fetchHealth = () => api.get('/health').then(res => res.data);
+export const fetchConfigStatus = () => api.get<ConfigStatus>('/config/status').then(res => res.data);
+
+export const createRun = (data: {
+  target_url: string;
+  description: string;
+  objectives: string[];
+  boundaries?: Record<string, any>;
+  mode?: string;
+}) => api.post<{ run_id: string; status: string; mode: string }>('/runs', data).then(res => res.data);
+
+export const fetchRuns = () => api.get<RunSummary[]>('/runs').then(res => res.data);
+export const fetchRun = (id: string) => api.get<RunSummary>(`/runs/${id}`).then(res => res.data);
+export const fetchRunEvents = (id: string) => api.get<RunEvent[]>(`/runs/${id}/events`).then(res => res.data);
+export const fetchRunTests = (id: string) => api.get<TestCaseExecution[]>(`/runs/${id}/tests`).then(res => res.data);
+export const fetchRunExploration = (id: string) => api.get<ExploredPage[]>(`/runs/${id}/exploration`).then(res => res.data);
+export const fetchRunSiteMap = (id: string) => api.get<{ nodes: any[]; edges: any[]; total_nodes: number; total_edges: number }>(`/runs/${id}/site-map`).then(res => res.data);
+export const cancelRun = (id: string) => api.post(`/runs/${id}/cancel`).then(res => res.data);
+
+export const fetchBugs = (params?: { severity?: string; status?: string }) =>
+  api.get<BugFinding[]>('/bugs', { params }).then(res => res.data);
+export const fetchBug = (id: string) => api.get<BugFinding>(`/bugs/${id}`).then(res => res.data);
+export const fetchRunBugs = (runId: string) => api.get<BugFinding[]>(`/runs/${runId}/bugs`).then(res => res.data);
+
+export const fetchRegressionTests = () => api.get<RegressionTest[]>('/regression-tests').then(res => res.data);
+export const saveRegressionTest = (testId: string, runId: string) =>
+  api.post<{ id: string; message: string }>(`/regression-tests?test_id=${testId}&run_id=${runId}`).then(res => res.data);
+export const rerunRegressionTest = (testId: string) =>
+  api.post<RegressionRunResult>(`/regression-tests/${testId}/run`).then(res => res.data);
+
+export default api;

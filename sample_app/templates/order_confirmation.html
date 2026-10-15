@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}Order Confirmed — DevStore{% endblock %}
+
+{% block content %}
+<div class="form-card" style="max-width: 600px; text-align: center;" id="confirmation-container">
+  <div style="font-size: 3.5rem; margin-bottom: 0.5rem;">🎉</div>
+  <h1 style="font-size: 1.75rem; color: #064e3b; margin-bottom: 0.5rem;" id="order-confirmed-heading">Thank You for Your Order!</h1>
+  <p style="color: #6b7280; font-size: 0.95rem; margin-bottom: 1.5rem;">
+    Your order has been recorded. Reference: <strong id="confirmed-order-id">{{ order.id }}</strong>
+  </p>
+
+  <div style="text-align: left; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1.25rem; margin-bottom: 1.5rem;">
+    <h3 style="font-size: 1rem; color: #064e3b; margin-bottom: 0.75rem;">Delivery Summary</h3>
+    <p><strong>Customer:</strong> <span id="confirmed-name">{{ order.fullname }}</span></p>
+    <p><strong>Email:</strong> <span id="confirmed-email">{{ order.email }}</span></p>
+    <p><strong>Shipping to:</strong> <span id="confirmed-address">{{ order.address }}, {{ order.city }}, {{ order.postal_code or '[EMPTY POSTAL CODE]' }} ({{ order.country }})</span></p>
+    <p style="margin-top: 0.5rem; border-top: 1px solid #e5e7eb; padding-top: 0.5rem;">
+      <strong>Total Paid:</strong> <span id="confirmed-total" style="color: #047857; font-weight: 700;">${{ "%.2f"|format(order.total) }}</span>
+    </p>
+  </div>
+
+  <div style="display: flex; gap: 1rem; justify-content: center;">
+    <a href="/products" id="btn-continue-shopping" class="btn btn-secondary">Continue Shopping</a>
+    <a href="/account" id="btn-view-order-account" class="btn btn-primary">View Account</a>
+  </div>
+</div>
+{% endblock %}
