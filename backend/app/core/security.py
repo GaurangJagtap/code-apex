@@ -21,6 +21,10 @@ def is_url_allowed(url: str) -> bool:
         if hostname == "169.254.169.254" or hostname.startswith("169.254."):
             return False
 
+        # If allow all hosts is active or wildcard is present
+        if getattr(settings, "ALLOW_ALL_HOSTS", False) or "*" in settings.ALLOWED_HOSTS:
+            return True
+
         # Check whitelist
         for allowed in settings.ALLOWED_HOSTS:
             if hostname == allowed or hostname.endswith("." + allowed):

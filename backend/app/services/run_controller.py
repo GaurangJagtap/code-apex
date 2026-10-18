@@ -171,7 +171,7 @@ class RunController:
             db_test_cases = []
             for pt in planned_tests:
                 tc = TestCase(
-                    id=pt["test_id"],
+                    id=f"{run_id}-{pt['test_id']}",
                     run_id=run_id,
                     title=pt["title"],
                     category=pt["category"],

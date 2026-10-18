@@ -13,13 +13,56 @@ import {
 } from 'lucide-react';
 import { createRun } from '../api/client';
 
+interface DemoTargetPreset {
+  id: string;
+  name: string;
+  badge: string;
+  url: string;
+  description: string;
+  objectives: string[];
+}
+
+const DEMO_PRESETS: DemoTargetPreset[] = [
+  {
+    id: 'devstore',
+    name: 'Controlled DevStore',
+    badge: '5 Seeded Defects',
+    url: 'http://127.0.0.1:5001',
+    description: 'Users should be able to register accounts, log in with valid credentials, browse product catalog items, add hardware products to their cart, increment quantities with accurate mathematical total calculations, fill checkout shipping details, and access protected customer account dashboards. Cart arithmetic and form validations must be strictly enforced.',
+    objectives: ['Functional testing', 'Form validation', 'Business-rule testing', 'Negative testing']
+  },
+  {
+    id: 'saucedemo',
+    name: 'SauceDemo E-Commerce',
+    badge: 'Industry Benchmark',
+    url: 'https://www.saucedemo.com',
+    description: 'Standard e-commerce QA benchmark. Users should be able to view login form, authenticate with standard credentials (standard_user / secret_sauce), browse catalog products, sort inventory, add items to cart, view cart subtotal, fill checkout credentials, and complete purchase workflows without UI exceptions.',
+    objectives: ['Functional testing', 'Form validation', 'Navigation testing']
+  },
+  {
+    id: 'the-internet',
+    name: 'The Internet QA Playground',
+    badge: 'Heroku Sandbox',
+    url: 'https://the-internet.herokuapp.com',
+    description: 'Autonomous exploration of UI testing sandbox. Verify navigation links, dynamic controls, authentication prompts, checkboxes, dropdown menus, and ensure error codes and status transitions resolve gracefully.',
+    objectives: ['Functional testing', 'Navigation testing', 'Negative testing']
+  },
+  {
+    id: 'example',
+    name: 'Example Domain',
+    badge: 'Clean Web',
+    url: 'https://example.com',
+    description: 'Verify standard web document accessibility, primary heading tags, informative documentation links, and responsive layout hydration without script errors.',
+    objectives: ['Functional testing', 'Navigation testing']
+  }
+];
+
 export const NewRun: React.FC = () => {
   const navigate = useNavigate();
 
   const [targetUrl, setTargetUrl] = useState('http://127.0.0.1:5001');
-  const [description, setDescription] = useState(
-    'Users should be able to register accounts, log in with valid credentials, browse product catalog items, add hardware products to their cart, increment quantities with accurate mathematical total calculations, fill checkout shipping details, and access protected customer account dashboards. Cart arithmetic and form validations must be strictly enforced.'
-  );
+  const [activePreset, setActivePreset] = useState<string>('devstore');
+  const [description, setDescription] = useState(DEMO_PRESETS[0].description);
 
   const availableObjectives = [
     'Functional testing',
@@ -91,6 +134,13 @@ export const NewRun: React.FC = () => {
     }
   };
 
+  const handleSelectPreset = (preset: DemoTargetPreset) => {
+    setActivePreset(preset.id);
+    setTargetUrl(preset.url);
+    setDescription(preset.description);
+    setSelectedObjectives(preset.objectives);
+  };
+
   const handleResetDemoApp = async () => {
     try {
       const res = await fetch('http://127.0.0.1:5001/api/reset', { method: 'POST' });
@@ -123,19 +173,57 @@ export const NewRun: React.FC = () => {
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Target Details Card */}
-        <div className="bg-white p-6 rounded-xl border border-[#e2e8f0] shadow-sm space-y-4">
+        <div className="bg-white p-6 rounded-xl border border-[#e2e8f0] shadow-sm space-y-5">
           <div className="flex items-center justify-between pb-3 border-b border-[#e2e8f0]">
             <h3 className="font-semibold text-sm text-[#0f172a] flex items-center gap-2">
               <Shield className="w-4 h-4 text-[#047857]" />
               Target Application & Intended Behavior
             </h3>
-            <button
-              type="button"
-              onClick={handleResetDemoApp}
-              className="text-xs font-semibold text-[#047857] hover:underline"
-            >
-              Reset Sample App Data
-            </button>
+            {targetUrl.includes('5001') && (
+              <button
+                type="button"
+                onClick={handleResetDemoApp}
+                className="text-xs font-semibold text-[#047857] hover:underline"
+              >
+                Reset Sample App Data
+              </button>
+            )}
+          </div>
+
+          {/* Quick Target URL Presets */}
+          <div className="space-y-2">
+            <label className="block text-xs font-semibold text-[#475569] uppercase tracking-wider">
+              Quick Target Presets (Or paste any custom web URL below)
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+              {DEMO_PRESETS.map(preset => {
+                const isSelected = activePreset === preset.id && targetUrl === preset.url;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => handleSelectPreset(preset)}
+                    className={`text-left p-3 rounded-lg border transition-all flex flex-col justify-between ${
+                      isSelected
+                        ? 'border-[#047857] bg-emerald-50/80 ring-1 ring-[#047857]'
+                        : 'border-[#cbd5e1] hover:border-[#94a3b8] bg-[#f8fafc]'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-bold text-[#0f172a]">{preset.name}</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+                          isSelected ? 'bg-emerald-200 text-emerald-900' : 'bg-slate-200 text-slate-700'
+                        }`}>
+                          {preset.badge}
+                        </span>
+                      </div>
+                      <div className="text-[11px] font-mono text-[#64748b] truncate">{preset.url}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div>
@@ -147,12 +235,16 @@ export const NewRun: React.FC = () => {
               type="url"
               required
               value={targetUrl}
-              onChange={e => setTargetUrl(e.target.value)}
+              onChange={e => {
+                setTargetUrl(e.target.value);
+                setActivePreset('custom');
+              }}
               className="w-full px-3.5 py-2 text-sm border border-[#cbd5e1] rounded-lg focus:outline-none focus:border-[#047857] focus:ring-1 focus:ring-[#047857] font-mono"
-              placeholder="http://127.0.0.1:5001"
+              placeholder="https://example.com or http://localhost:3000"
             />
-            <div className="text-[11px] text-[#64748b] mt-1">
-              Safety rule: Hostname must match allowed test hosts (<code>127.0.0.1</code>, <code>localhost</code>, <code>devstore.local</code>).
+            <div className="text-[11px] text-[#047857] mt-1 font-medium flex items-center gap-1">
+              <Sparkles className="w-3.5 h-3.5 text-[#047857]" />
+              <span>Universal Target Engine: Autonomous exploration works on any valid HTTP/HTTPS URL, dev port, or web application.</span>
             </div>
           </div>
 

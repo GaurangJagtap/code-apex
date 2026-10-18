@@ -24,10 +24,17 @@ class Settings(BaseSettings):
     )
     
     # Security: Allowed Target Hosts
+    ALLOW_ALL_HOSTS: bool = False
     ALLOWED_HOSTS: List[str] = [
         "127.0.0.1",
         "localhost",
-        "devstore.local"
+        "devstore.local",
+        "saucedemo.com",
+        "the-internet.herokuapp.com",
+        "example.com",
+        "demoqa.com",
+        "practicetestautomation.com",
+        "httpbin.org"
     ]
     
     # Safe Execution Boundaries
