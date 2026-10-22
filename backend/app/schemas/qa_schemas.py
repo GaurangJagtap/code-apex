@@ -83,12 +83,13 @@ class BugFindingResponse(BaseModel):
     id: str
     run_id: str
     test_execution_id: Optional[str] = None
+    dedup_key: Optional[str] = None
     title: str
     description: str
     affected_url: str
     severity: str
     severity_reason: Optional[str] = None
-    status: str # Confirmed, Suspected, Inconclusive, Not Reproducible
+    status: str # Verified, Likely, Inconclusive, Not reproduced (Confirmed, Suspected)
     confidence_score: float
     verification_notes: Optional[str] = None
     expected_behavior: str

@@ -8,6 +8,7 @@ import { TestRuns } from './pages/TestRuns';
 import { BugReports } from './pages/BugReports';
 import { BugDetail } from './pages/BugDetail';
 import { RegressionTests } from './pages/RegressionTests';
+import { Benchmark } from './pages/Benchmark';
 import { Settings } from './pages/Settings';
 
 export function App() {
@@ -22,6 +23,7 @@ export function App() {
           <Route path="bugs" element={<BugReports />} />
           <Route path="bugs/:bugId" element={<BugDetail />} />
           <Route path="regression" element={<RegressionTests />} />
+          <Route path="benchmark" element={<Benchmark />} />
           <Route path="settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

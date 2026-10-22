@@ -11,7 +11,8 @@ import {
   ShieldCheck,
   Cpu,
   RefreshCw,
-  ExternalLink
+  ExternalLink,
+  Award
 } from 'lucide-react';
 import { fetchConfigStatus, ConfigStatus } from '../../api/client';
 
@@ -30,6 +31,7 @@ export const Layout: React.FC = () => {
     { label: 'Test Runs', path: '/runs', icon: ListChecks },
     { label: 'Bug Reports', path: '/bugs', icon: Bug },
     { label: 'Regression Tests', path: '/regression', icon: History },
+    { label: 'Benchmark Console', path: '/benchmark', icon: Award },
     { label: 'Settings', path: '/settings', icon: SettingsIcon },
   ];
 

@@ -90,7 +90,7 @@ export interface BugFinding {
   affected_url: string;
   severity: 'Critical' | 'High' | 'Medium' | 'Low';
   severity_reason?: string;
-  status: 'Confirmed' | 'Suspected' | 'Inconclusive' | 'Not Reproducible';
+  status: 'Verified' | 'Likely' | 'Inconclusive' | 'Not reproduced' | 'Confirmed' | 'Suspected' | 'Not Reproducible';
   confidence_score: number;
   verification_notes?: string;
   expected_behavior: string;
@@ -141,6 +141,78 @@ export interface ConfigStatus {
   };
 }
 
+export interface RegressionSuiteResult {
+  total_executed: number;
+  passed: number;
+  failed: number;
+  regressions_detected: number;
+  fixes_detected: number;
+  details: Array<{
+    test_id: string;
+    name: string;
+    status: string;
+    previous_status?: string;
+    duration_sec: number;
+    diff_summary: string;
+  }>;
+  executed_at: string;
+  message?: string;
+}
+
+export interface BenchmarkMetrics {
+  defect_recall: number;
+  defect_recall_percent: string;
+  precision: number;
+  precision_percent: string;
+  reproducibility_rate: number;
+  reproducibility_percent: string;
+  journey_coverage: number;
+  journey_coverage_percent: string;
+  true_positives: number;
+  false_positives: number;
+  total_planted_defects: number;
+  total_findings_reported: number;
+  duration_sec: number;
+  total_tests_executed: number;
+}
+
+export interface BenchmarkDefectItem {
+  defect_id: string;
+  title: string;
+  category: string;
+  criticality: string;
+  status: 'Detected' | 'Missed';
+  verification_status: string;
+  confidence: number;
+  finding_id?: string;
+  replays: number;
+}
+
+export interface BenchmarkReport {
+  run_id: string;
+  target_url: string;
+  evaluated_at: string;
+  metrics: BenchmarkMetrics;
+  defect_matrix: BenchmarkDefectItem[];
+  unmatched_findings: Array<{ id: string; title: string; affected_url: string; status: string }>;
+  benchmark_journeys: Array<{ journey_id: string; name: string; path: string; covered: boolean }>;
+}
+
+export interface GroundTruthRegistry {
+  planted_defects: Array<{
+    defect_id: string;
+    category: string;
+    title: string;
+    affected_path: string;
+    expected_behavior: string;
+    actual_behavior: string;
+    criticality: string;
+  }>;
+  benchmark_journeys: Array<{ journey_id: string; name: string; path: string }>;
+  total_planted: number;
+  total_journeys: number;
+}
+
 export const fetchHealth = () => api.get('/health').then(res => res.data);
 export const fetchConfigStatus = () => api.get<ConfigStatus>('/config/status').then(res => res.data);
 
@@ -170,5 +242,20 @@ export const saveRegressionTest = (testId: string, runId: string) =>
   api.post<{ id: string; message: string }>(`/regression-tests?test_id=${testId}&run_id=${runId}`).then(res => res.data);
 export const rerunRegressionTest = (testId: string) =>
   api.post<RegressionRunResult>(`/regression-tests/${testId}/run`).then(res => res.data);
+export const rerunAllRegressionTests = () =>
+  api.post<RegressionSuiteResult>('/regression-tests/run-all').then(res => res.data);
+
+export const fetchBenchmarkGroundTruth = () =>
+  api.get<GroundTruthRegistry>('/benchmark/ground-truth').then(res => res.data);
+export const fetchRunBenchmarkResults = (runId: string) =>
+  api.get<BenchmarkReport>(`/benchmark/results/${runId}`).then(res => res.data);
+export const runBenchmarkSuite = (targetUrl: string = 'http://127.0.0.1:5001') =>
+  api.post<BenchmarkReport>(`/benchmark/run?target_url=${encodeURIComponent(targetUrl)}`).then(res => res.data);
+
+// Sample App Defect Toggle Helper (Direct to sample app 5001 or through proxy)
+export const fetchSampleAppDefects = () =>
+  axios.get('http://127.0.0.1:5001/api/defects').then(res => res.data).catch(() => null);
+export const toggleSampleAppDefects = (params?: { enabled?: boolean; defect_id?: string }) =>
+  axios.post('http://127.0.0.1:5001/api/defects/toggle', params || {}).then(res => res.data).catch(() => null);
 
 export default api;

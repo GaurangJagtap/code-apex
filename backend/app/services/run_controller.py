@@ -6,8 +6,17 @@ from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 from backend.app.db.session import SessionLocal
 from backend.app.db.models import (
-    TestRun, ExploredPage, TestCase, TestExecution, BugFinding, Artifact, RunEvent, RegressionTest
+    TestRun, ExploredPage, TestCase, TestExecution, BugFinding, Artifact, RunEvent, RegressionTest, get_utc_now
 )
+
+def calc_duration_sec(end_dt, start_dt) -> float:
+    if not end_dt or not start_dt:
+        return 0.0
+    if hasattr(end_dt, 'tzinfo') and end_dt.tzinfo is not None:
+        end_dt = end_dt.replace(tzinfo=None)
+    if hasattr(start_dt, 'tzinfo') and start_dt.tzinfo is not None:
+        start_dt = start_dt.replace(tzinfo=None)
+    return max(0.0, (end_dt - start_dt).total_seconds())
 from backend.app.services.browser_manager import BrowserSession
 from backend.app.services.curiosity_engine import CuriosityEngine
 from backend.app.services.browser_executor import BrowserExecutor
@@ -47,7 +56,7 @@ class RunController:
         event = RunEvent(
             id=f"evt-{uuid.uuid4().hex[:8]}",
             run_id=run_id,
-            timestamp=datetime.datetime.utcnow(),
+            timestamp=get_utc_now(),
             stage=stage,
             agent_role=agent_role,
             event_type=event_type,
@@ -74,7 +83,7 @@ class RunController:
         try:
             # 1. INITIALIZING
             run.status = "initializing"
-            run.start_time = datetime.datetime.utcnow()
+            run.start_time = get_utc_now()
             db.commit()
 
             cls.emit_event(
@@ -89,59 +98,44 @@ class RunController:
                 db.commit()
                 return
 
-            # 2. EXPLORING (Scout Agent)
+            # 2. EXPLORING (Scout Agent: Multi-hop graph exploration)
             run.status = "exploring"
             db.commit()
             cls.emit_event(
                 db, run_id, "explore", "scout", "SCOUT_STARTED",
-                "Scout Agent inspecting DOM structure and interactive controls."
+                f"Scout Agent initiating autonomous multi-hop exploration on {run.target_url}."
             )
 
+            max_explore_pages = (run.boundaries or {}).get("max_pages", settings.MAX_PAGES_EXPLORE)
             scout = ScoutAgent(base_url=run.target_url)
             page = browser_session.page
-            await page.goto(run.target_url, wait_until="domcontentloaded", timeout=12000)
 
-            inspection = await scout.inspect_page(page)
-            # Store ExploredPage in DB
-            db_page = ExploredPage(
-                id=f"page-{uuid.uuid4().hex[:8]}",
-                run_id=run_id,
-                url=inspection["url"],
-                title=inspection["title"],
-                status="visited",
-                discovered_controls=inspection["controls"],
-                navigation_links=inspection["links"],
-                depth=0
-            )
-            db.add(db_page)
+            # Perform multi-hop graph exploration
+            inspections = await scout.explore_graph(page, max_pages=min(max_explore_pages, 8), max_depth=2)
+            if not inspections:
+                await page.goto(run.target_url, wait_until="domcontentloaded", timeout=12000)
+                inspections = [await scout.inspect_page(page)]
+
+            for insp in inspections:
+                db_page = ExploredPage(
+                    id=f"page-{uuid.uuid4().hex[:8]}",
+                    run_id=run_id,
+                    url=insp["url"],
+                    title=insp.get("title") or insp["url"],
+                    status="visited",
+                    discovered_controls=insp.get("controls", []),
+                    navigation_links=insp.get("links", []),
+                    depth=insp.get("depth", 0)
+                )
+                db.add(db_page)
+
             db.commit()
 
             cls.emit_event(
-                db, run_id, "explore", "scout", "PAGE_EXPLORED",
-                f"Discovered {len(inspection['controls'])} interactive controls and {len(inspection['links'])} routes on '{inspection['title']}'",
-                {"controls_count": len(inspection["controls"]), "links": inspection["links"]}
+                db, run_id, "explore", "scout", "PAGES_EXPLORED",
+                f"Discovered {len(inspections)} application page states with {sum(len(i.get('controls', [])) for i in inspections)} interactive controls.",
+                {"pages_count": len(inspections), "discovered_routes": [i["url"] for i in inspections]}
             )
-
-            # Discover reachable catalog page if available
-            catalog_link = next((l for l in inspection["links"] if "products" in l), None)
-            if catalog_link:
-                try:
-                    await page.goto(catalog_link, wait_until="domcontentloaded", timeout=8000)
-                    cat_inspection = await scout.inspect_page(page)
-                    db_cat_page = ExploredPage(
-                        id=f"page-{uuid.uuid4().hex[:8]}",
-                        run_id=run_id,
-                        url=cat_inspection["url"],
-                        title=cat_inspection["title"],
-                        status="visited",
-                        discovered_controls=cat_inspection["controls"],
-                        navigation_links=cat_inspection["links"],
-                        depth=1
-                    )
-                    db.add(db_cat_page)
-                    db.commit()
-                except Exception:
-                    pass
 
             if cls.is_cancelled(run_id):
                 run.status = "cancelled"
@@ -160,10 +154,10 @@ class RunController:
             llm_provider = LLMProvider()
             tester = TesterAgent(curiosity_engine=curiosity_engine, llm_provider=llm_provider)
 
-            planned_tests = tester.generate_test_plan(
+            planned_tests = await tester.generate_test_plan(
                 target_url=run.target_url,
                 app_description=run.description,
-                scout_observations=[inspection],
+                scout_observations=inspections,
                 mode=run.mode
             )
 
@@ -205,6 +199,10 @@ class RunController:
             executor = BrowserExecutor(browser_session=browser_session)
             verifier = VerifierAgent(browser_executor=executor, max_retries=1)
 
+            max_actions = (run.boundaries or {}).get("max_actions", settings.MAX_ACTIONS_PER_RUN)
+            max_duration = (run.boundaries or {}).get("max_duration_sec", settings.MAX_RUN_DURATION_SEC)
+            action_count = 0
+
             passed_cnt = 0
             failed_cnt = 0
             blocked_cnt = 0
@@ -216,6 +214,18 @@ class RunController:
                     db.commit()
                     break
 
+                # Enforce execution safety boundaries (action & time budget)
+                elapsed = calc_duration_sec(get_utc_now(), run.start_time)
+                if action_count >= max_actions or elapsed >= max_duration:
+                    tc.status = "Blocked"
+                    blocked_cnt += 1
+                    cls.emit_event(
+                        db, run_id, "execute", "orchestrator", "BUDGET_REACHED",
+                        f"Execution budget limit reached for {tc.id} ({action_count}/{max_actions} actions, {elapsed:.1f}s/{max_duration}s)."
+                    )
+                    db.commit()
+                    continue
+
                 tc.status = "Running"
                 db.commit()
 
@@ -224,13 +234,14 @@ class RunController:
                     f"Executing {tc.id}: {tc.title} (Curiosity Score: {tc.priority_score})"
                 )
 
-                t_start = datetime.datetime.utcnow()
+                t_start = get_utc_now()
                 exec_result = await executor.execute_test({
                     "steps": tc.steps,
                     "assertions": tc.assertions
                 })
-                t_end = datetime.datetime.utcnow()
-                duration = (t_end - t_start).total_seconds()
+                t_end = get_utc_now()
+                duration = calc_duration_sec(t_end, t_start)
+                action_count += len(tc.steps)
 
                 test_exec_id = f"exec-{uuid.uuid4().hex[:8]}"
                 test_exec = TestExecution(
@@ -287,37 +298,55 @@ class RunController:
                         initial_result=exec_result
                     )
 
-                    # Build Proof-Carrying Bug Finding
-                    bug_id = f"BUG-{uuid.uuid4().hex[:6].upper()}"
-                    failed_step_texts = [s.get("description", str(s)) for s in tc.steps]
-                    
-                    finding = BugFinding(
-                        id=bug_id,
-                        run_id=run_id,
-                        test_execution_id=test_exec_id,
-                        title=f"Defect in {tc.title}",
-                        description=f"Deterministic failure detected in {tc.category}. {verification['verification_notes']}",
-                        affected_url=exec_result.get("final_url", run.target_url),
-                        severity=verification["severity"],
-                        severity_reason=verification["severity_reason"],
-                        status=verification["finding_status"],
-                        confidence_score=verification["confidence_score"],
-                        verification_notes=verification["verification_notes"],
-                        expected_behavior="; ".join([a.get("message") or f"Expected {a.get('type')}" for a in verification["failed_assertions"]]) or ("; ".join([a.get("message") for a in tc.assertions if a.get("message")]) or tc.title),
-                        actual_behavior="; ".join([a.get("actual") or "Assertion violation" for a in verification["failed_assertions"]]) or (exec_result.get("execution_error") or "Assertion failed during browser execution"),
-                        reproduction_steps=failed_step_texts,
-                        screenshot_url=f"/api/v1/artifacts/{exec_result['screenshot_ids'][-1]}" if exec_result["screenshot_ids"] else None,
-                        console_errors=exec_result["page_errors"],
-                        replay_attempts=verification["replay_attempts"]
-                    )
-                    db.add(finding)
-                    findings_cnt += 1
+                    # Deduplication Check
+                    dedup_key = verification.get("dedup_key")
+                    existing_finding = None
+                    if dedup_key:
+                        existing_finding = db.query(BugFinding).filter(
+                            BugFinding.run_id == run_id,
+                            BugFinding.dedup_key == dedup_key
+                        ).first()
 
-                    cls.emit_event(
-                        db, run_id, "verify", "verifier", "BUG_CONFIRMED",
-                        f"VERIFIED FINDING [{finding.status}]: {finding.title} (Severity: {finding.severity})",
-                        {"finding_id": bug_id, "severity": finding.severity, "status": finding.status}
-                    )
+                    if existing_finding:
+                        existing_finding.replay_attempts += verification["replay_attempts"]
+                        existing_finding.verification_notes += f" | Corroborated by {tc.id} failure."
+                        cls.emit_event(
+                            db, run_id, "verify", "verifier", "BUG_DEDUPLICATED",
+                            f"Corroborated existing defect {existing_finding.id} (Deduplicated with key {dedup_key}).",
+                            {"finding_id": existing_finding.id, "dedup_key": dedup_key}
+                        )
+                    else:
+                        bug_id = f"BUG-{uuid.uuid4().hex[:6].upper()}"
+                        repro_steps_texts = [s.get("description", str(s)) for s in verification.get("minimal_steps", tc.steps)]
+                        
+                        finding = BugFinding(
+                            id=bug_id,
+                            run_id=run_id,
+                            test_execution_id=test_exec_id,
+                            dedup_key=dedup_key,
+                            title=f"Defect in {tc.title}",
+                            description=f"Deterministic failure detected in {tc.category}. {verification['verification_notes']}",
+                            affected_url=exec_result.get("final_url", run.target_url),
+                            severity=verification["severity"],
+                            severity_reason=verification["severity_reason"],
+                            status=verification["finding_status"],
+                            confidence_score=verification["confidence_score"],
+                            verification_notes=verification["verification_notes"],
+                            expected_behavior="; ".join([a.get("message") or f"Expected {a.get('type')}" for a in verification["failed_assertions"]]) or ("; ".join([a.get("message") for a in tc.assertions if a.get("message")]) or tc.title),
+                            actual_behavior="; ".join([a.get("actual") or "Assertion violation" for a in verification["failed_assertions"]]) or (exec_result.get("execution_error") or "Assertion failed during browser execution"),
+                            reproduction_steps=repro_steps_texts,
+                            screenshot_url=f"/api/v1/artifacts/{exec_result['screenshot_ids'][-1]}" if exec_result["screenshot_ids"] else None,
+                            console_errors=exec_result["page_errors"],
+                            replay_attempts=verification["replay_attempts"]
+                        )
+                        db.add(finding)
+                        findings_cnt += 1
+
+                        cls.emit_event(
+                            db, run_id, "verify", "verifier", "BUG_VERIFIED",
+                            f"VERIFIED FINDING [{finding.status}]: {finding.title} (Severity: {finding.severity})",
+                            {"finding_id": bug_id, "severity": finding.severity, "status": finding.status}
+                        )
 
                 db.commit()
 
@@ -336,8 +365,8 @@ class RunController:
 
             # 6. COMPLETED
             run.status = "completed" if not cls.is_cancelled(run_id) else "cancelled"
-            run.end_time = datetime.datetime.utcnow()
-            run.duration_sec = (run.end_time - run.start_time).total_seconds()
+            run.end_time = get_utc_now()
+            run.duration_sec = calc_duration_sec(run.end_time, run.start_time)
             db.commit()
 
             cls.emit_event(
@@ -348,7 +377,7 @@ class RunController:
         except Exception as e:
             run.status = "failed"
             run.error_summary = str(e)
-            run.end_time = datetime.datetime.utcnow()
+            run.end_time = get_utc_now()
             db.commit()
             cls.emit_event(
                 db, run_id, "failed", "orchestrator", "RUN_FAILED",

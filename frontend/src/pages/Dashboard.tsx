@@ -11,7 +11,8 @@ import {
   ArrowRight,
   TrendingUp,
   Layers,
-  Activity
+  Activity,
+  Award
 } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis } from 'recharts';
 import {
@@ -49,8 +50,8 @@ export const Dashboard: React.FC = () => {
   const totalPassed = runs.reduce((acc, r) => acc + (r.passed_count || 0), 0);
   const totalFailed = runs.reduce((acc, r) => acc + (r.failed_count || 0), 0);
   const totalBlocked = runs.reduce((acc, r) => acc + (r.blocked_count || 0), 0);
-  const confirmedBugs = bugs.filter(b => b.status === 'Confirmed').length;
-  const suspectedBugs = bugs.filter(b => b.status === 'Suspected').length;
+  const confirmedBugs = bugs.filter(b => b.status === 'Confirmed' || b.status === 'Verified').length;
+  const suspectedBugs = bugs.filter(b => b.status === 'Suspected' || b.status === 'Likely').length;
 
   const testDistributionData = [
     { name: 'Passed', value: totalPassed || 0, color: '#10b981' },
@@ -79,6 +80,13 @@ export const Dashboard: React.FC = () => {
           </p>
         </div>
         <div className="flex gap-3">
+          <NavLink
+            to="/benchmark"
+            className="bg-emerald-900/60 border border-emerald-400 text-white font-semibold px-4 py-2 rounded-lg text-sm hover:bg-emerald-800 transition shadow-sm flex items-center gap-2"
+          >
+            <Award className="w-4 h-4 text-emerald-300" />
+            Benchmark Console
+          </NavLink>
           <NavLink
             to="/new-run"
             className="bg-white text-[#064e3b] font-semibold px-4 py-2 rounded-lg text-sm hover:bg-emerald-50 transition shadow-sm flex items-center gap-2"

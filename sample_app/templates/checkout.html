@@ -60,11 +60,17 @@
       </select>
     </div>
 
-    <!-- Seeded Defect BUG-04: Button does not disable or throttle on click, allowing duplicate order creation -->
+    <!-- Seeded Defect BUG-04: Button does not disable or throttle on click when defect is active -->
     <div style="margin-top: 1.5rem;">
+      {% if bug04_active %}
       <button type="submit" id="btn-place-order" class="btn btn-primary" style="width: 100%; padding: 0.85rem; font-size: 1rem;">
         Place Order Now
       </button>
+      {% else %}
+      <button type="submit" id="btn-place-order" class="btn btn-primary" onclick="this.disabled=true; this.innerText='Processing Order...'; this.form.submit();" style="width: 100%; padding: 0.85rem; font-size: 1rem;">
+        Place Order Now
+      </button>
+      {% endif %}
     </div>
   </form>
 </div>

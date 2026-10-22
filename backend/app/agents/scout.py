@@ -86,3 +86,45 @@ class ScoutAgent:
             "links": list(set(valid_links)),
             "unexplored_count": len(self.discovered_urls - self.visited_urls)
         }
+
+    async def explore_graph(
+        self,
+        page: Page,
+        max_pages: int = 8,
+        max_depth: int = 2,
+        action_timeout_ms: int = 6000
+    ) -> List[Dict[str, Any]]:
+        """
+        Executes multi-hop autonomous graph exploration using breadth-first traversal.
+        Discovers pages, controls, forms, and transitions while avoiding loops and respecting budgets.
+        """
+        inspections: List[Dict[str, Any]] = []
+        queue = [(self.base_url, 0)]
+
+        while queue and len(inspections) < max_pages:
+            target_url, depth = queue.pop(0)
+            
+            # Normalize URL
+            parsed = urlparse(target_url)
+            norm_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+            
+            if norm_url in self.visited_urls and len(inspections) > 0:
+                continue
+
+            try:
+                await page.goto(target_url, wait_until="domcontentloaded", timeout=action_timeout_ms)
+                inspection = await self.inspect_page(page)
+                inspection["depth"] = depth
+                inspections.append(inspection)
+
+                # If within depth budget, enqueue newly discovered unvisited links
+                if depth < max_depth:
+                    for link in inspection["links"]:
+                        parsed_link = urlparse(link)
+                        norm_link = f"{parsed_link.scheme}://{parsed_link.netloc}{parsed_link.path}"
+                        if norm_link not in self.visited_urls:
+                            queue.append((link, depth + 1))
+            except Exception:
+                continue
+
+        return inspections

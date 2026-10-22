@@ -149,3 +149,85 @@ class ReportBuilder:
 </body>
 </html>"""
         return html
+
+    @staticmethod
+    def generate_markdown_bug_report(finding: Dict[str, Any], run_info: Dict[str, Any]) -> str:
+        fid = finding.get("id", "BUG-UNKNOWN")
+        title = finding.get("title", "Untitled Defect")
+        severity = finding.get("severity", "Medium")
+        status = finding.get("status", "Verified")
+        affected_url = finding.get("affected_url", "N/A")
+        expected = finding.get("expected_behavior", "N/A")
+        actual = finding.get("actual_behavior", "N/A")
+        repro_steps = finding.get("reproduction_steps", [])
+        screenshot_url = finding.get("screenshot_url")
+        notes = finding.get("verification_notes", "")
+        replays = finding.get("replay_attempts", 1)
+        created_at = finding.get("created_at", datetime.datetime.now(datetime.timezone.utc).isoformat())
+
+        steps_md = "\n".join([f"{i+1}. {s}" for i, s in enumerate(repro_steps)]) or "1. Direct navigation to target route."
+
+        md = f"""# Proof-Carrying Defect Report: [{fid}] {title}
+
+- **Finding Status:** `{status}`
+- **Severity Level:** `{severity}`
+- **Affected URL:** `{affected_url}`
+- **Test Run ID:** `{run_info.get('id', 'N/A')}`
+- **Timestamp:** `{created_at}`
+- **Independent Replay Verification:** {replays} session(s) executed
+
+---
+
+## 1. Reproducibility & Verification Analysis
+> **Verifier Finding Note:**
+> {notes}
+
+## 2. Step-by-Step Reproduction Instructions
+{steps_md}
+
+## 3. Discrepancy Matrix
+
+| Dimension | Observation |
+| :--- | :--- |
+| **Expected Behavior** | {expected} |
+| **Actual Defective Outcome** | {actual} |
+
+## 4. Evidence References
+- **Screenshot Evidence:** {screenshot_url or 'N/A'}
+- **Verification Confidence:** {finding.get('confidence_score', 0.95) * 100:.0f}%
+
+---
+*Generated autonomously by Autonomous AI QA Engineer (Code Apex 3.0)*
+"""
+        return md
+
+    @staticmethod
+    def generate_junit_xml_report(run: Dict[str, Any], tests: List[Dict[str, Any]], findings: List[Dict[str, Any]]) -> str:
+        import html
+        total = len(tests)
+        failed = sum(1 for t in tests if t.get("status") in ("Failed", "Blocked"))
+        duration = run.get("duration_sec", 0.0)
+        run_id = run.get("id", "run-unknown")
+
+        xml_lines = [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            f'<testsuites name="Autonomous AI QA Engineer" tests="{total}" failures="{failed}" errors="0" time="{duration:.2f}">',
+            f'  <testsuite name="{html.escape(run_id)}" tests="{total}" failures="{failed}" errors="0" time="{duration:.2f}">'
+        ]
+
+        for t in tests:
+            t_id = html.escape(str(t.get("id", "TC")))
+            t_title = html.escape(str(t.get("title", "Test")))
+            t_cat = html.escape(str(t.get("category", "Functional")))
+            t_dur = float(t.get("duration_sec", 0.1))
+            t_status = t.get("status", "Passed")
+
+            xml_lines.append(f'    <testcase classname="{t_cat}" name="[{t_id}] {t_title}" time="{t_dur:.2f}">')
+            if t_status in ("Failed", "Blocked"):
+                reason = html.escape(str(t.get("actual_observations") or t.get("risk_reason") or "Assertion failure"))
+                xml_lines.append(f'      <failure message="Defect verified during browser execution" type="{t_status}">{reason}</failure>')
+            xml_lines.append('    </testcase>')
+
+        xml_lines.append('  </testsuite>')
+        xml_lines.append('</testsuites>')
+        return "\n".join(xml_lines)

@@ -81,6 +81,26 @@ class AssertionEngine:
                     passed = False
                     actual = f"Unable to parse subtotal from '{subtotal_text}'"
 
+            elif a_type == "element_disabled":
+                loc = page.locator(target).first
+                if await loc.count() > 0:
+                    is_disabled = await loc.is_disabled()
+                    has_attr = await loc.evaluate("el => el.hasAttribute('disabled') || el.classList.contains('disabled')")
+                    passed = bool(is_disabled or has_attr)
+                    actual = f"Element '{target}' disabled status: {passed}"
+                else:
+                    passed = False
+                    actual = f"Element '{target}' not found"
+
+            elif a_type == "element_enabled":
+                loc = page.locator(target).first
+                if await loc.count() > 0:
+                    passed = await loc.is_enabled()
+                    actual = f"Element '{target}' enabled: {passed}"
+                else:
+                    passed = False
+                    actual = f"Element '{target}' not found"
+
             else:
                 passed = False
                 actual = f"Unknown assertion type '{a_type}'"

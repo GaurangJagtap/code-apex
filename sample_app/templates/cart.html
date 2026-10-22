@@ -81,8 +81,10 @@
 
 <script>
   // SEEDED DEFECT BUG-02:
-  // When quantity is incremented or updated, we change the input value,
-  // but deliberately do NOT re-calculate or update the cart subtotal and total calculations!
+  // When quantity is incremented or updated in defective mode, UI totals fail to recompute.
+  // In fixed mode, arithmetic recalculation is executed immediately.
+  const defectsEnabled = {{ "true" if defects_enabled else "false" }};
+
   function updateQty(productId, delta) {
     const input = document.getElementById('qty-input-' + productId);
     let val = parseInt(input.value) || 1;
@@ -94,7 +96,23 @@
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ product_id: productId, quantity: val })
     });
-    // Note: Bug BUG-02 present! UI totals are deliberately NOT updated to reflect the new quantity.
+
+    if (!defectsEnabled) {
+      const priceEl = document.getElementById('price-' + productId);
+      const priceText = priceEl ? priceEl.innerText.replace('$', '') : '0';
+      const unitPrice = parseFloat(priceText) || 0;
+      const rowTotal = unitPrice * val;
+      const rowTotalEl = document.getElementById('item-total-' + productId);
+      if (rowTotalEl) rowTotalEl.innerText = '$' + rowTotal.toFixed(2);
+      const subtotalEl = document.getElementById('cart-subtotal');
+      if (subtotalEl) subtotalEl.innerText = '$' + rowTotal.toFixed(2);
+      const shipping = 15.00;
+      const tax = rowTotal * 0.08;
+      const taxEl = document.getElementById('cart-tax');
+      if (taxEl) taxEl.innerText = '$' + tax.toFixed(2);
+      const totalEl = document.getElementById('cart-total');
+      if (totalEl) totalEl.innerText = '$' + (rowTotal + shipping + tax).toFixed(2);
+    }
   }
 
   function onQtyInputChange(productId, val) {

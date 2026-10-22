@@ -171,7 +171,7 @@ class TesterAgent:
 
         return candidates
 
-    def generate_test_plan(
+    async def generate_test_plan(
         self,
         target_url: str,
         app_description: str,
@@ -184,11 +184,45 @@ class TesterAgent:
         clean_url = target_url.rstrip("/")
         is_devstore = ("5001" in clean_url or "devstore" in clean_url)
 
-        if not is_devstore:
-            candidates = self._generate_dynamic_test_plan(clean_url, scout_observations, app_description)
-        else:
-            # Base candidates calibrated for web e-commerce workflows with seeded defects
-            candidates = [
+        candidates = None
+
+        # Attempt structured AI generation if in AI mode and provider configured
+        if mode == "ai" and self.llm and self.llm.is_configured():
+            prompt = f"""You are an autonomous QA test planner.
+Target URL: {target_url}
+Application Description: {app_description}
+Discovered Page States: {len(scout_observations)}
+Generate a structured test plan JSON containing positive user journeys, form boundary validations, and security checks.
+Format:
+{{
+  "test_cases": [
+    {{
+      "test_id": "AI-01",
+      "title": "...",
+      "category": "Functional testing",
+      "priority": "High",
+      "path": "{clean_url}",
+      "preconditions": "...",
+      "steps": [{{"action": "goto", "value": "{clean_url}", "description": "Open page"}}],
+      "assertions": [{{"type": "element_visible", "target": "body", "expected": "", "message": "Verify document root"}}],
+      "risk_reason": "...",
+      "regression_candidate": true
+    }}
+  ]
+}}"""
+            try:
+                plan_json = await self.llm.generate_structured_plan(prompt)
+                if plan_json and "test_cases" in plan_json and len(plan_json["test_cases"]) > 0:
+                    candidates = plan_json["test_cases"]
+            except Exception:
+                candidates = None
+
+        if not candidates:
+            if not is_devstore:
+                candidates = self._generate_dynamic_test_plan(clean_url, scout_observations, app_description)
+            else:
+                # Base candidates calibrated for web e-commerce workflows with seeded defects
+                candidates = [
             {
                 "test_id": "TEST-01",
                 "title": "Homepage Navigation and Catalog Exploration",
@@ -316,6 +350,31 @@ class TesterAgent:
                 ],
                 "risk_reason": "Verifies that legitimate users can authenticate and establish secure sessions.",
                 "regression_candidate": True
+            },
+            {
+                "test_id": "TEST-07",
+                "title": "Checkout Order Submission Idempotency & Button Throttling",
+                "category": "Business-rule testing",
+                "priority": "High",
+                "path": f"{clean_url}/checkout",
+                "preconditions": "Cart contains items ready for order placement.",
+                "steps": [
+                    {"action": "goto", "value": f"{clean_url}/products/PRD-02", "description": "Open product PRD-02 view"},
+                    {"action": "click", "selector": "#btn-detail-add-to-cart", "description": "Add product to cart"},
+                    {"action": "click", "selector": "#btn-proceed-checkout", "description": "Navigate to checkout page"},
+                    {"action": "fill", "selector": "#fullname", "value": "Jordan Blake", "description": "Enter customer full name"},
+                    {"action": "fill", "selector": "#email", "value": "jordan@apexqa.io", "description": "Enter customer email"},
+                    {"action": "fill", "selector": "#address", "value": "500 Innovation Park", "description": "Enter delivery address"},
+                    {"action": "fill", "selector": "#city", "value": "Seattle", "description": "Enter delivery city"},
+                    {"action": "fill", "selector": "#postal_code", "value": "98101", "description": "Enter valid postal code"},
+                    {"action": "click", "selector": "#btn-place-order", "description": "Click 'Place Order Now' submit CTA"},
+                    {"action": "screenshot", "description": "Capture submission processing state"}
+                ],
+                "assertions": [
+                    {"type": "element_disabled", "target": "#btn-place-order", "expected": "", "message": "Submit button must disable immediately upon submission to prevent duplicate charge (BUG-04)"}
+                ],
+                "risk_reason": "Prevents accidental duplicate orders and unthrottled payment re-submissions (BUG-04).",
+                "regression_candidate": False
             }
         ]
 

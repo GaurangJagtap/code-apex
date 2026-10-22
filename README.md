@@ -275,13 +275,20 @@ When configured, the Tester Agent queries the model to synthesize structured tes
 
 ---
 
-## Demonstration Guide (5 Minutes)
+---
 
-1. **Launch Run:** Navigate to **New Test Run** (`http://localhost:5173/new-run`). The sample app URL `http://127.0.0.1:5001` is pre-populated. Click **"Start Autonomous Test Run"**.
-2. **Observe Exploration:** The system opens the **Explore Application** page. Watch the Scout Agent discover the navigation links and interactive controls in real time.
-3. **Inspect Plan & Execution:** Navigate to **Test Runs**. Observe the prioritized candidate tests ranked by the Curiosity Engine. Click each test to view numbered steps, assertions, and live screenshots.
-4. **Inspect Bug Reports:** Navigate to **Bug Reports**. Review verified findings (e.g. `BUG-01` email validation, `BUG-02` cart total desync, `BUG-05` unauthenticated account access). Inspect the side-by-side expected vs actual behavior and captured failure screenshot. Click **"Export HTML"** to download the proof-carrying report.
-5. **Rerun Regression Test:** Open **Regression Tests**. Click **"Rerun Journey"** on a saved test to observe automated Playwright execution with real-time pass/fail diff analysis.
+## Demonstration Guide (5 Minutes for Hackathon Judges)
+
+1. **Launch Run:** Navigate to **New Test Run** (`http://localhost:5173/new-run`). The sample app URL `http://127.0.0.1:5001` is pre-populated with exploratory objectives. Click **"Start Autonomous Test Run"**.
+2. **Observe Exploration:** The system opens the **Explore Application** page. Watch the Scout Agent discover the navigation links and interactive controls across multiple routes in real time.
+3. **Inspect Plan & Execution:** Navigate to **Test Runs**. Observe candidate tests prioritized by the **Curiosity Engine**. Click each test to view numbered steps, assertions, and captured screenshots.
+4. **Inspect Bug Reports & Proof:** Navigate to **Bug Reports**. Review verified findings (e.g. `BUG-01` email validation, `BUG-02` cart arithmetic desync, `BUG-03` postal validation, `BUG-04` double-submit idempotency, `BUG-05` unauthenticated access). Inspect side-by-side expected vs actual behavior and captured failure screenshot. Click **"Export Markdown"** or **"Export HTML"** to download the proof-carrying report.
+5. **Inspect Benchmark Console & Ground Truth:** Navigate to **Benchmark Console** (`/benchmark`). Review the isolated ground-truth defect comparison matrix, Defect Recall (%), Precision (%), Reproducibility Rate (%), and Journey Coverage (%).
+6. **Toggle Planted Defects & Prove Regression Memory:**
+   - In the Benchmark Console, click **"Toggle"** on any defect (e.g. `BUG-01` or `BUG-02`) to simulate a software fix or a regression.
+   - Navigate to **Regression Tests** (`/regression`). Click **"Run Entire Suite"** to execute all saved journeys concurrently in clean browser contexts.
+   - Observe the diff analyzer flagging newly passed fixes or newly introduced regressions with clear before/after diffs!
+7. **Export JUnit XML for CI/CD:** Export test results via `/api/v1/runs/{run_id}/export?format=junit` for direct CI/CD integration.
 
 ---
 

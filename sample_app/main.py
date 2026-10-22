@@ -74,6 +74,15 @@ db_users: Dict[str, Dict[str, Any]] = {k: dict(v) for k, v in INITIAL_USERS.item
 db_carts: Dict[str, List[Dict[str, Any]]] = {}
 db_orders: List[Dict[str, Any]] = []
 
+# Controlled Seeded Defects Mode (True = Planted Defect Active; False = Clean/Fixed Build)
+SEEDED_DEFECTS_STATE: Dict[str, bool] = {
+    "BUG-01": True,  # Faulty Email Format Validation (/register)
+    "BUG-02": True,  # Cart Subtotal Calculation Failure on Quantity Update (/cart)
+    "BUG-03": True,  # Missing Validation on Required Postal/ZIP Code (/checkout)
+    "BUG-04": True,  # Non-Idempotent Duplicate Order Submission (/checkout)
+    "BUG-05": True,  # Broken Access Control on Protected Account Route (/account)
+}
+
 def get_session_id(request: Request) -> str:
     session_id = request.cookies.get("devstore_session")
     if not session_id:
@@ -168,7 +177,8 @@ async def view_cart(request: Request):
         "tax": tax,
         "total": total,
         "cart_count": sum(i["quantity"] for i in cart_items),
-        "user": user
+        "user": user,
+        "defects_enabled": SEEDED_DEFECTS_STATE.get("BUG-02", True)
     })
     response.set_cookie(key="devstore_session", value=session_id)
     return response
@@ -232,7 +242,8 @@ async def checkout_page(request: Request):
         "default_email": user["email"] if user else "",
         "cart_count": get_cart_count(session_id),
         "user": user,
-        "error": None
+        "error": None,
+        "bug04_active": SEEDED_DEFECTS_STATE.get("BUG-04", True)
     })
     response.set_cookie(key="devstore_session", value=session_id)
     return response
@@ -244,7 +255,7 @@ async def process_checkout(
     email: str = Form(...),
     address: str = Form(...),
     city: str = Form(...),
-    postal_code: Optional[str] = Form(None), # SEEDED BUG BUG-03: Not validated as required
+    postal_code: Optional[str] = Form(None), # SEEDED BUG BUG-03: Not validated as required when defect active
     country: str = Form("US"),
     payment_method: str = Form("card")
 ):
@@ -255,7 +266,30 @@ async def process_checkout(
     if not cart:
         return RedirectResponse(url="/cart", status_code=303)
 
-    # Note: BUG-03: Required validation for postal_code is intentionally missing!
+    # Seeded Defect BUG-03: Required postal code validation
+    if not SEEDED_DEFECTS_STATE.get("BUG-03", True):
+        if not postal_code or not postal_code.strip():
+            return render_template(request, "checkout.html", {
+                "default_name": fullname,
+                "default_email": email,
+                "cart_count": get_cart_count(session_id),
+                "user": user,
+                "error": "Postal / ZIP Code is required.",
+                "bug04_active": SEEDED_DEFECTS_STATE.get("BUG-04", True)
+            })
+
+    # Seeded Defect BUG-04: Idempotency enforcement against duplicate submissions
+    if not SEEDED_DEFECTS_STATE.get("BUG-04", True):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        for existing_ord in reversed(db_orders):
+            if existing_ord.get("session_id") == session_id and existing_ord.get("email") == email:
+                try:
+                    dt = datetime.datetime.fromisoformat(existing_ord["created_at"])
+                    if (now - dt).total_seconds() < 5:
+                        return RedirectResponse(url=f"/order-confirmation/{existing_ord['id']}", status_code=303)
+                except Exception:
+                    pass
+
     subtotal = 0.0
     for item in cart:
         prod = next((p for p in db_products if p["id"] == item["product_id"]), None)
@@ -336,14 +370,25 @@ async def register_user(
             "success": None
         })
 
-    # SEEDED BUG BUG-01: Faulty email validation
-    if len(email) < 3:
-        return render_template(request, "register.html", {
-            "cart_count": get_cart_count(session_id),
-            "user": None,
-            "error": "Please provide a valid email address.",
-            "success": None
-        })
+    # Seeded Defect BUG-01: Faulty email validation
+    if SEEDED_DEFECTS_STATE.get("BUG-01", True):
+        if len(email) < 3:
+            return render_template(request, "register.html", {
+                "cart_count": get_cart_count(session_id),
+                "user": None,
+                "error": "Please provide a valid email address.",
+                "success": None
+            })
+    else:
+        # Fixed BUG-01: Strict email regex format check
+        import re
+        if not re.match(r"^[\w\.\+\-]+@[\w\-]+\.[a-zA-Z]{2,}$", email):
+            return render_template(request, "register.html", {
+                "cart_count": get_cart_count(session_id),
+                "user": None,
+                "error": "Please provide a valid email address with @ and domain.",
+                "success": None
+            })
 
     db_users[email] = {
         "name": name,
@@ -404,6 +449,12 @@ async def logout(request: Request):
 async def customer_account(request: Request):
     session_id = get_session_id(request)
     user = get_current_user(request)
+    
+    # If defect BUG-05 is fixed: enforce authentication redirect
+    if not SEEDED_DEFECTS_STATE.get("BUG-05", True):
+        if not user:
+            return RedirectResponse(url="/login?redirect=/account", status_code=303)
+
     response = render_template(request, "account.html", {
         "user": user,
         "orders": db_orders,
@@ -414,6 +465,49 @@ async def customer_account(request: Request):
 
 # ----------------- Control & Reset Endpoints -----------------
 
+@app.get("/api/defects")
+async def get_defects_status():
+    """Returns the state of all 5 seeded defects (True = defective, False = fixed)."""
+    return {
+        "status": "success",
+        "defects": SEEDED_DEFECTS_STATE,
+        "all_defects_enabled": all(SEEDED_DEFECTS_STATE.values())
+    }
+
+@app.post("/api/defects/toggle")
+async def toggle_defects(request: Request):
+    """
+    Toggles all defects or a specific defect.
+    Body JSON or Form: {"enabled": false} or {"defect_id": "BUG-01", "enabled": false}
+    """
+    try:
+        data = await request.json()
+    except Exception:
+        try:
+            form = await request.form()
+            data = dict(form)
+        except Exception:
+            data = {}
+
+    if "defect_id" in data:
+        d_id = str(data["defect_id"]).upper()
+        if d_id in SEEDED_DEFECTS_STATE:
+            SEEDED_DEFECTS_STATE[d_id] = bool(data.get("enabled", not SEEDED_DEFECTS_STATE[d_id]))
+    elif "enabled" in data:
+        val = str(data["enabled"]).lower() in ("true", "1", "yes")
+        for k in SEEDED_DEFECTS_STATE:
+            SEEDED_DEFECTS_STATE[k] = val
+    else:
+        current = all(SEEDED_DEFECTS_STATE.values())
+        for k in SEEDED_DEFECTS_STATE:
+            SEEDED_DEFECTS_STATE[k] = not current
+
+    return {
+        "status": "success",
+        "defects": SEEDED_DEFECTS_STATE,
+        "all_defects_enabled": all(SEEDED_DEFECTS_STATE.values())
+    }
+
 @app.post("/api/reset")
 async def reset_demo_state():
     """Resets the demo state back to default synthetic data."""
@@ -422,6 +516,8 @@ async def reset_demo_state():
     db_users = {k: dict(v) for k, v in INITIAL_USERS.items()}
     db_carts = {}
     db_orders = []
+    for k in SEEDED_DEFECTS_STATE:
+        SEEDED_DEFECTS_STATE[k] = True
     return {"status": "success", "message": "Demo state reset to synthetic defaults."}
 
 @app.get("/api/state")
@@ -431,7 +527,8 @@ async def get_demo_state():
         "products_count": len(db_products),
         "users_count": len(db_users),
         "orders_count": len(db_orders),
-        "carts_active": len(db_carts)
+        "carts_active": len(db_carts),
+        "defects": SEEDED_DEFECTS_STATE
     }
 
 if __name__ == "__main__":

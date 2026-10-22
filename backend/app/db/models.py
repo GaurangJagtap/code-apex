@@ -3,6 +3,9 @@ from sqlalchemy import Column, String, Integer, Float, Text, Boolean, DateTime, 
 from sqlalchemy.orm import relationship
 from backend.app.db.session import Base
 
+def get_utc_now():
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+
 class Application(Base):
     __tablename__ = "applications"
 
@@ -10,7 +13,7 @@ class Application(Base):
     name = Column(String(200), nullable=False)
     base_url = Column(String(500), nullable=False)
     description = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=get_utc_now)
 
 class TestRun(Base):
     __tablename__ = "test_runs"
@@ -23,7 +26,7 @@ class TestRun(Base):
     objectives = Column(JSON, default=list)
     boundaries = Column(JSON, default=dict)
     
-    start_time = Column(DateTime, default=datetime.datetime.utcnow)
+    start_time = Column(DateTime, default=get_utc_now)
     end_time = Column(DateTime, nullable=True)
     duration_sec = Column(Float, default=0.0)
     
@@ -34,7 +37,7 @@ class TestRun(Base):
     findings_count = Column(Integer, default=0)
     
     error_summary = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=get_utc_now)
 
     # Relationships
     pages = relationship("ExploredPage", back_populates="run", cascade="all, delete-orphan")
@@ -54,7 +57,7 @@ class ExploredPage(Base):
     discovered_controls = Column(JSON, default=list) # inputs, buttons, links
     navigation_links = Column(JSON, default=list)
     depth = Column(Integer, default=0)
-    visited_at = Column(DateTime, default=datetime.datetime.utcnow)
+    visited_at = Column(DateTime, default=get_utc_now)
 
     run = relationship("TestRun", back_populates="pages")
 
@@ -75,7 +78,7 @@ class TestCase(Base):
     risk_reason = Column(Text, nullable=True)
     curiosity_breakdown = Column(JSON, default=dict) # impact, uncertainty, novelty, gap
     regression_eligible = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=get_utc_now)
 
     run = relationship("TestRun", back_populates="tests")
     executions = relationship("TestExecution", back_populates="test_case", cascade="all, delete-orphan")
@@ -88,7 +91,7 @@ class TestExecution(Base):
     run_id = Column(String(50), ForeignKey("test_runs.id"), nullable=False, index=True)
     status = Column(String(50), default="Running") # Passed, Failed, Blocked, Inconclusive
     actual_observations = Column(Text, nullable=True)
-    start_time = Column(DateTime, default=datetime.datetime.utcnow)
+    start_time = Column(DateTime, default=get_utc_now)
     end_time = Column(DateTime, nullable=True)
     duration_sec = Column(Float, default=0.0)
     retry_count = Column(Integer, default=0)
@@ -105,12 +108,13 @@ class BugFinding(Base):
     id = Column(String(50), primary_key=True, index=True)
     run_id = Column(String(50), ForeignKey("test_runs.id"), nullable=False, index=True)
     test_execution_id = Column(String(50), ForeignKey("test_executions.id"), nullable=True, index=True)
+    dedup_key = Column(String(100), nullable=True, index=True)
     title = Column(String(300), nullable=False)
     description = Column(Text, nullable=False)
     affected_url = Column(String(500), nullable=False)
     severity = Column(String(20), default="Medium") # Critical, High, Medium, Low
     severity_reason = Column(Text, nullable=True)
-    status = Column(String(50), default="Confirmed") # Confirmed, Suspected, Inconclusive, Not Reproducible
+    status = Column(String(50), default="Verified") # Verified, Likely, Inconclusive, Not reproduced
     confidence_score = Column(Float, default=0.95)
     verification_notes = Column(Text, nullable=True)
     expected_behavior = Column(Text, nullable=False)
@@ -119,7 +123,7 @@ class BugFinding(Base):
     screenshot_url = Column(String(500), nullable=True)
     console_errors = Column(JSON, default=list)
     replay_attempts = Column(Integer, default=1)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=get_utc_now)
 
     run = relationship("TestRun", back_populates="findings")
     execution = relationship("TestExecution", back_populates="finding")
@@ -135,7 +139,7 @@ class Artifact(Base):
     file_path = Column(String(500), nullable=False)
     file_name = Column(String(200), nullable=False)
     content_type = Column(String(100), default="image/png")
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=get_utc_now)
 
     run = relationship("TestRun", back_populates="artifacts")
 
@@ -150,7 +154,7 @@ class RegressionTest(Base):
     structured_steps = Column(JSON, default=list)
     expected_outcomes = Column(JSON, default=list)
     assertions = Column(JSON, default=list)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=get_utc_now)
     last_run_at = Column(DateTime, nullable=True)
     last_status = Column(String(50), default="Saved")
     executions_count = Column(Integer, default=0)
@@ -165,7 +169,7 @@ class RegressionExecution(Base):
     run_id = Column(String(50), nullable=True)
     status = Column(String(50), nullable=False) # Passed, Failed, Blocked
     previous_status = Column(String(50), nullable=True)
-    execution_time = Column(DateTime, default=datetime.datetime.utcnow)
+    execution_time = Column(DateTime, default=get_utc_now)
     duration_sec = Column(Float, default=0.0)
     diff_summary = Column(Text, nullable=True)
 
@@ -176,7 +180,7 @@ class RunEvent(Base):
 
     id = Column(String(50), primary_key=True, index=True)
     run_id = Column(String(50), ForeignKey("test_runs.id"), nullable=False, index=True)
-    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    timestamp = Column(DateTime, default=get_utc_now)
     stage = Column(String(50), nullable=False) # initialize, explore, plan, execute, verify, report
     agent_role = Column(String(50), default="orchestrator") # scout, tester, verifier, orchestrator
     event_type = Column(String(50), nullable=False)

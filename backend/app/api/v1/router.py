@@ -435,6 +435,97 @@ def save_regression_test(
 
     return {"id": reg_id, "message": f"Successfully saved '{tc.title}' as reusable regression test."}
 
+@api_router.post("/regression-tests/run-all")
+async def rerun_all_regression_tests(db: Session = Depends(get_db)):
+    """Executes all saved regression tests sequentially and calculates regression diffs."""
+    tests = db.query(RegressionTest).all()
+    if not tests:
+        return {
+            "total_executed": 0,
+            "passed": 0,
+            "failed": 0,
+            "regressions_detected": 0,
+            "fixes_detected": 0,
+            "details": [],
+            "message": "No regression tests in suite to execute."
+        }
+
+    browser_session = BrowserSession(run_id="suite_regression_run")
+    await browser_session.initialize(headless=settings.BROWSER_HEADLESS)
+
+    results = []
+    passed_cnt = 0
+    failed_cnt = 0
+    regressions_cnt = 0
+    fixes_cnt = 0
+
+    try:
+        executor = BrowserExecutor(browser_session=browser_session)
+        for rt in tests:
+            t_start = datetime.datetime.now(datetime.timezone.utc)
+            exec_res = await executor.execute_test({
+                "steps": rt.structured_steps,
+                "assertions": rt.assertions
+            })
+            t_end = datetime.datetime.now(datetime.timezone.utc)
+            duration = (t_end - t_start).total_seconds()
+
+            new_status = exec_res["status"]
+            prev_status = rt.last_status
+
+            if prev_status == "Passed" and new_status == "Failed":
+                diff = f"REGRESSION DETECTED! Previously Passed, now Failed ({exec_res.get('execution_error') or 'Assertion failed'})."
+                regressions_cnt += 1
+                failed_cnt += 1
+            elif prev_status == "Failed" and new_status == "Passed":
+                diff = "FIX VERIFIED! Previously Failed, now Passed."
+                fixes_cnt += 1
+                passed_cnt += 1
+            elif new_status == "Passed":
+                diff = f"Stable: PASSED in {duration:.2f}s."
+                passed_cnt += 1
+            else:
+                diff = f"Persistent Failure: {new_status}."
+                failed_cnt += 1
+
+            rt.last_status = new_status
+            rt.last_run_at = datetime.datetime.now(datetime.timezone.utc)
+            rt.executions_count += 1
+
+            exec_id = f"reg-exec-{uuid.uuid4().hex[:8]}"
+            reg_exec = RegressionExecution(
+                id=exec_id,
+                regression_test_id=rt.id,
+                status=new_status,
+                previous_status=prev_status,
+                duration_sec=duration,
+                diff_summary=diff
+            )
+            db.add(reg_exec)
+
+            results.append({
+                "test_id": rt.id,
+                "name": rt.name,
+                "status": new_status,
+                "previous_status": prev_status,
+                "duration_sec": duration,
+                "diff_summary": diff
+            })
+
+        db.commit()
+
+        return {
+            "total_executed": len(tests),
+            "passed": passed_cnt,
+            "failed": failed_cnt,
+            "regressions_detected": regressions_cnt,
+            "fixes_detected": fixes_cnt,
+            "details": results,
+            "executed_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }
+    finally:
+        await browser_session.close()
+
 @api_router.post("/regression-tests/{test_id}/run", response_model=RegressionRunResultResponse)
 async def rerun_regression_test(test_id: str, db: Session = Depends(get_db)):
     reg_test = db.query(RegressionTest).filter(RegressionTest.id == test_id).first()
@@ -446,12 +537,12 @@ async def rerun_regression_test(test_id: str, db: Session = Depends(get_db)):
 
     try:
         executor = BrowserExecutor(browser_session=browser_session)
-        t_start = datetime.datetime.utcnow()
+        t_start = datetime.datetime.now(datetime.timezone.utc)
         result = await executor.execute_test({
             "steps": reg_test.structured_steps,
             "assertions": reg_test.assertions
         })
-        t_end = datetime.datetime.utcnow()
+        t_end = datetime.datetime.now(datetime.timezone.utc)
         duration = (t_end - t_start).total_seconds()
 
         new_status = result["status"]
@@ -466,7 +557,7 @@ async def rerun_regression_test(test_id: str, db: Session = Depends(get_db)):
             diff = f"Status unchanged: {new_status} (Ran in {duration:.2f}s)."
 
         reg_test.last_status = new_status
-        reg_test.last_run_at = datetime.datetime.utcnow()
+        reg_test.last_run_at = datetime.datetime.now(datetime.timezone.utc)
         reg_test.executions_count += 1
 
         exec_id = f"reg-exec-{uuid.uuid4().hex[:8]}"
@@ -488,17 +579,78 @@ async def rerun_regression_test(test_id: str, db: Session = Depends(get_db)):
             previous_status=prev_status,
             duration_sec=duration,
             diff_summary=diff,
-            executed_at=datetime.datetime.utcnow().isoformat()
+            executed_at=datetime.datetime.now(datetime.timezone.utc).isoformat()
         )
     finally:
         await browser_session.close()
+
+# ----------------- Planted-Bug Benchmark & Quality Metrics -----------------
+
+@api_router.get("/benchmark/ground-truth")
+def get_benchmark_ground_truth():
+    from backend.app.services.benchmark_service import SEEDED_GROUND_TRUTH, BENCHMARK_JOURNEYS
+    return {
+        "planted_defects": SEEDED_GROUND_TRUTH,
+        "benchmark_journeys": BENCHMARK_JOURNEYS,
+        "total_planted": len(SEEDED_GROUND_TRUTH),
+        "total_journeys": len(BENCHMARK_JOURNEYS)
+    }
+
+@api_router.get("/benchmark/results/{run_id}")
+def get_run_benchmark_results(run_id: str, db: Session = Depends(get_db)):
+    from backend.app.services.benchmark_service import BenchmarkService
+    try:
+        report = BenchmarkService.evaluate_run(db, run_id)
+        return report
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@api_router.post("/benchmark/run")
+async def execute_benchmark_suite(
+    target_url: str = Query("http://127.0.0.1:5001", description="Benchmark target web application"),
+    db: Session = Depends(get_db)
+):
+    """
+    Executes a complete benchmark run against the target application,
+    evaluates findings against the ground truth defect registry, and returns calculated quality metrics.
+    """
+    from backend.app.services.benchmark_service import BenchmarkService
+
+    # 1. Reset demo state if target is local DevStore
+    if "5001" in target_url or "devstore" in target_url:
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post("http://127.0.0.1:5001/api/reset")
+        except Exception:
+            pass
+
+    # 2. Launch autonomous QA run
+    run_id = f"bench-{uuid.uuid4().hex[:8]}"
+    run = TestRun(
+        id=run_id,
+        target_url=target_url,
+        description="Autonomous Benchmark Evaluation: Verify e-commerce catalog, form validation, cart arithmetic, checkout idempotency, and access controls against planted ground truth.",
+        status="created",
+        mode="demo",
+        objectives=["Functional testing", "Form validation", "Business-rule testing", "Negative testing"]
+    )
+    db.add(run)
+    db.commit()
+
+    # Execute synchronously to produce immediate verified benchmark result
+    await RunController.execute_run_task(run_id)
+
+    # 3. Evaluate results against ground-truth registry
+    eval_report = BenchmarkService.evaluate_run(db, run_id)
+    return eval_report
 
 # ----------------- Report Exporting -----------------
 
 @api_router.get("/bugs/{bug_id}/export")
 def export_bug_report(
     bug_id: str,
-    format: str = Query("html", enum=["html", "json"]),
+    format: str = Query("html", enum=["html", "json", "markdown"]),
     db: Session = Depends(get_db)
 ):
     finding = db.query(BugFinding).filter(BugFinding.id == bug_id).first()
@@ -520,11 +672,15 @@ def export_bug_report(
         "screenshot_url": finding.screenshot_url,
         "verification_notes": finding.verification_notes,
         "replay_attempts": finding.replay_attempts,
+        "confidence_score": finding.confidence_score,
         "created_at": finding.created_at.isoformat()
     }
 
     if format == "json":
         return JSONResponse(content=finding_dict)
+    elif format == "markdown":
+        md_content = ReportBuilder.generate_markdown_bug_report(finding_dict, run_dict)
+        return Response(content=md_content, media_type="text/markdown", headers={"Content-Disposition": f"attachment; filename={bug_id}.md"})
     else:
         html_content = ReportBuilder.generate_html_bug_report(finding_dict, run_dict)
         return HTMLResponse(content=html_content)
@@ -532,7 +688,7 @@ def export_bug_report(
 @api_router.get("/runs/{run_id}/export")
 def export_run_report(
     run_id: str,
-    format: str = Query("json", enum=["json"]),
+    format: str = Query("json", enum=["json", "junit"]),
     db: Session = Depends(get_db)
 ):
     run = db.query(TestRun).filter(TestRun.id == run_id).first()
@@ -541,6 +697,36 @@ def export_run_report(
 
     tests = db.query(TestCase).filter(TestCase.run_id == run_id).all()
     findings = db.query(BugFinding).filter(BugFinding.run_id == run_id).all()
+
+    test_dicts = [
+        {
+            "id": t.id,
+            "title": t.title,
+            "category": t.category,
+            "priority": t.priority,
+            "priority_score": t.priority_score,
+            "status": t.status,
+            "risk_reason": t.risk_reason
+        }
+        for t in tests
+    ]
+    finding_dicts = [
+        {
+            "id": f.id,
+            "title": f.title,
+            "severity": f.severity,
+            "status": f.status,
+            "reproduction_steps": f.reproduction_steps,
+            "expected": f.expected_behavior,
+            "actual": f.actual_behavior
+        }
+        for f in findings
+    ]
+
+    if format == "junit":
+        run_dict = {"id": run.id, "duration_sec": run.duration_sec}
+        xml_content = ReportBuilder.generate_junit_xml_report(run_dict, test_dicts, finding_dicts)
+        return Response(content=xml_content, media_type="application/xml", headers={"Content-Disposition": f"attachment; filename={run_id}_junit.xml"})
 
     export_data = {
         "run_id": run.id,
@@ -553,29 +739,7 @@ def export_run_report(
         "passed_count": run.passed_count,
         "failed_count": run.failed_count,
         "findings_count": run.findings_count,
-        "tests": [
-            {
-                "id": t.id,
-                "title": t.title,
-                "category": t.category,
-                "priority": t.priority,
-                "priority_score": t.priority_score,
-                "status": t.status,
-                "risk_reason": t.risk_reason
-            }
-            for t in tests
-        ],
-        "findings": [
-            {
-                "id": f.id,
-                "title": f.title,
-                "severity": f.severity,
-                "status": f.status,
-                "reproduction_steps": f.reproduction_steps,
-                "expected": f.expected_behavior,
-                "actual": f.actual_behavior
-            }
-            for f in findings
-        ]
+        "tests": test_dicts,
+        "findings": finding_dicts
     }
     return JSONResponse(content=export_data)

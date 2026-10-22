@@ -48,7 +48,7 @@ class BrowserSession:
             return "", "", ""
         
         artifact_id = f"art-{uuid.uuid4().hex[:8]}"
-        timestamp = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
         file_name = f"{self.run_id}_{prefix}_{timestamp}_{artifact_id}.png"
         file_path = os.path.join(settings.ARTIFACTS_DIR, file_name)
 

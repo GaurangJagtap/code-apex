@@ -72,17 +72,34 @@ async def test_full_autonomous_qa_lifecycle():
     findings = db.query(BugFinding).filter(BugFinding.run_id == run_id).all()
     assert len(findings) >= 1
     for f in findings:
-        assert f.status in ("Confirmed", "Suspected")
+        assert f.status in ("Verified", "Likely", "Confirmed", "Suspected")
         assert len(f.reproduction_steps) > 0
         assert f.expected_behavior != ""
         assert f.actual_behavior != ""
         assert f.replay_attempts >= 1
+
+    # Verify Ground-Truth Benchmark Evaluation
+    from backend.app.services.benchmark_service import BenchmarkService
+    eval_result = BenchmarkService.evaluate_run(db, run_id)
+    assert "metrics" in eval_result
+    assert "defect_matrix" in eval_result
+    assert "benchmark_journeys" in eval_result
+    metrics = eval_result["metrics"]
+    assert metrics["defect_recall"] > 0
+    assert metrics["precision"] > 0
+    assert metrics["reproducibility_rate"] > 0
+    assert metrics["journey_coverage"] > 0
 
     # Verify Regression Test can be saved from passing test
     passing_test = db.query(TestCase).filter(TestCase.run_id == run_id, TestCase.status == "Passed").first()
     assert passing_test is not None
 
     reg_id = "reg-test-e2e"
+    old_reg = db.query(RegressionTest).filter(RegressionTest.id == reg_id).first()
+    if old_reg:
+        db.delete(old_reg)
+        db.commit()
+
     reg_test = RegressionTest(
         id=reg_id,
         name=f"Regression: {passing_test.title}",

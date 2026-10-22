@@ -19,6 +19,18 @@ if not os.path.exists(VENV_PYTHON):
 if not os.path.exists(VENV_PYTHON):
     VENV_PYTHON = sys.executable
 
+if sys.platform == "win32":
+    extra_paths = [
+        r"C:\Program Files\nodejs",
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Python", "Python312"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Python", "Python312", "Scripts"),
+    ]
+    cur_path = os.environ.get("PATH", "")
+    for ep in extra_paths:
+        if os.path.exists(ep) and ep.lower() not in cur_path.lower():
+            cur_path = ep + os.pathsep + cur_path
+    os.environ["PATH"] = cur_path
+
 def main():
     print("=" * 70)
     print("  AUTONOMOUS AI QA ENGINEER — CODE APEX 3.0 (iMocha Track IM-02)")

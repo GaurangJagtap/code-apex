@@ -59,10 +59,19 @@ export const BugDetail: React.FC = () => {
 
         <div className="flex items-center gap-2">
           <a
+            href={`/api/v1/bugs/${bug.id}/export?format=markdown`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-[#cbd5e1] bg-white hover:bg-slate-50 flex items-center gap-1.5 text-[#334155] shadow-sm"
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-700" />
+            <span>Export Markdown</span>
+          </a>
+          <a
             href={`/api/v1/bugs/${bug.id}/export?format=html`}
             target="_blank"
             rel="noreferrer"
-            className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-[#cbd5e1] hover:bg-slate-50 flex items-center gap-1.5 text-[#334155]"
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-[#cbd5e1] bg-white hover:bg-slate-50 flex items-center gap-1.5 text-[#334155] shadow-sm"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Export HTML</span>
@@ -71,7 +80,7 @@ export const BugDetail: React.FC = () => {
             href={`/api/v1/bugs/${bug.id}/export?format=json`}
             target="_blank"
             rel="noreferrer"
-            className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-[#cbd5e1] hover:bg-slate-50 flex items-center gap-1.5 text-[#334155]"
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-[#cbd5e1] bg-white hover:bg-slate-50 flex items-center gap-1.5 text-[#334155] shadow-sm"
           >
             <FileCode className="w-3.5 h-3.5" />
             <span>Export JSON</span>
@@ -97,9 +106,13 @@ export const BugDetail: React.FC = () => {
             </span>
             <span
               className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
-                bug.status === 'Confirmed'
+                bug.status === 'Verified' || bug.status === 'Confirmed'
                   ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                  : 'bg-amber-100 text-amber-800 border border-amber-300'
+                  : bug.status === 'Likely'
+                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                  : bug.status === 'Inconclusive'
+                  ? 'bg-purple-100 text-purple-800 border border-purple-300'
+                  : 'bg-rose-100 text-rose-800 border border-rose-300'
               }`}
             >
               {bug.status}
